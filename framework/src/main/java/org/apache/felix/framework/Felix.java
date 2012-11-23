@@ -4867,12 +4867,17 @@ public class Felix extends BundleImpl implements Framework
     void acquireInstallLock(String location)
         throws BundleException
     {
+        if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+            m_logger.log(Logger.LOG_DEBUG, "acquireInstallLock() " + location);   
+        }
         synchronized (m_installRequestLock_Priority1)
         {
             while (m_installRequestMap.get(location) != null)
             {
                 try
                 {
+                    m_logger.log(Logger.LOG_DEBUG, 
+                            "acquireInstallLock() waiting on installRequestLock_Priority1");  
                     m_installRequestLock_Priority1.wait();
                 }
                 catch (InterruptedException ex)
@@ -4881,14 +4886,24 @@ public class Felix extends BundleImpl implements Framework
                 }
             }
 
+            if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                m_logger.log(Logger.LOG_DEBUG, "acquireInstallLock() adding location to installRequestMap: " + location);   
+            }
             m_installRequestMap.put(location, location);
         }
     }
 
     void releaseInstallLock(String location)
     {
+        if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+            m_logger.log(Logger.LOG_DEBUG, "releaseInstallLock() " + location);   
+        }
         synchronized (m_installRequestLock_Priority1)
         {
+            if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                m_logger.log(Logger.LOG_DEBUG, 
+                        "releaseInstallLock() removing location from installRequestMap and notifying: " + location);   
+            }
             m_installRequestMap.remove(location);
             m_installRequestLock_Priority1.notifyAll();
         }
@@ -4915,6 +4930,15 @@ public class Felix extends BundleImpl implements Framework
     void acquireBundleLock(BundleImpl bundle, int desiredStates)
         throws IllegalStateException
     {
+        if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+            m_logger.log(Logger.LOG_DEBUG, 
+                    "acquireBundleLock() " + bundle
+                    + ", desiredStates=" + desiredStates
+                    + ", lockable=" + bundle.isLockable()
+                    + ", global lock thread=" + m_globalLockThread
+                    + ", bundle locking thread=" + bundle.getLockingThread()
+                    );   
+        }
         synchronized (m_bundleLock)
         {
             // Wait if the desired bundle is already locked by someone else
@@ -4938,11 +4962,16 @@ public class Felix extends BundleImpl implements Framework
                     && (bundle.getLockingThread() != null)
                     && m_globalLockWaitersList.contains(bundle.getLockingThread()))
                 {
+                    if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                        m_logger.log(Logger.LOG_DEBUG, 
+                                "acquireBundleLock() interrupting locking thread " + bundle.getLockingThread());
+                    }
                     bundle.getLockingThread().interrupt();
                 }
 
                 try
                 {
+                    m_logger.log(Logger.LOG_DEBUG, "acquireBundleLock() waiting on bundleLock"); 
                     m_bundleLock.wait();
                 }
                 catch (InterruptedException ex)
@@ -4960,6 +4989,9 @@ public class Felix extends BundleImpl implements Framework
             }
 
             // Acquire the bundle lock.
+            if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                m_logger.log(Logger.LOG_DEBUG, "acquireBundleLock() locking BundleImpl " + bundle); 
+            }
             bundle.lock();
         }
     }
@@ -4972,14 +5004,23 @@ public class Felix extends BundleImpl implements Framework
     **/
     void releaseBundleLock(BundleImpl bundle)
     {
+        if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+            m_logger.log(Logger.LOG_DEBUG, "releaseBundleLock() " + bundle);   
+        }
         synchronized (m_bundleLock)
         {
-            // Unlock the bundle.
+            // Unlock the bundle
+            if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                m_logger.log(Logger.LOG_DEBUG, 
+                        "releaseBundleLock() unlocking BundleImpl " + bundle); 
+            }
             bundle.unlock();
             // If the thread no longer holds the bundle lock,
             // then remove it from the held lock map.
             if (bundle.getLockingThread() == null)
             {
+                m_logger.log(Logger.LOG_DEBUG, 
+                        "releaseBundleLock() notifying bundleLock"); 
                 m_bundleLock.notifyAll();
             }
         }
@@ -4997,6 +5038,7 @@ public class Felix extends BundleImpl implements Framework
     **/
     boolean acquireGlobalLock()
     {
+        m_logger.log(Logger.LOG_DEBUG, "acquireGlobalLock()");   
         synchronized (m_bundleLock)
         {
             // Wait as long as some other thread holds the global lock
@@ -5016,10 +5058,12 @@ public class Felix extends BundleImpl implements Framework
                 // Now wait for the global lock.
                 try
                 {
+                    m_logger.log(Logger.LOG_DEBUG, "acquireGlobalLock() waiting on bundleLock");
                     m_bundleLock.wait();
                 }
                 catch (InterruptedException ex)
                 {
+                    m_logger.log(Logger.LOG_DEBUG, "acquireGlobalLock() interrupted while waiting for global lock");
                     interrupted = true;
                 }
                 // At this point we are either interrupted or will get the
@@ -5041,8 +5085,13 @@ public class Felix extends BundleImpl implements Framework
             // anyone, since the thread was likely interrupted to force it to give
             // up a bundle lock it is holding. When it does give up the bundle
             // lock, it will do a notifyAll() in there.
-
-            return !interrupted;
+            final boolean result = !interrupted;
+            if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                m_logger.log(Logger.LOG_DEBUG, "acquireGlobalLock() returns " + result  
+                        + ", global lock count=" + m_globalLockCount
+                        + ", global lock thread=" + m_globalLockThread);
+            }
+            return result;
         }
     }
 
@@ -5053,6 +5102,9 @@ public class Felix extends BundleImpl implements Framework
     **/
     void releaseGlobalLock()
     {
+        if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+            m_logger.log(Logger.LOG_DEBUG, "releaseGlobalLock() - held by " + m_globalLockThread);   
+        }
         synchronized (m_bundleLock)
         {
             // Decrement the current thread's global lock count;
@@ -5062,6 +5114,8 @@ public class Felix extends BundleImpl implements Framework
                 if (m_globalLockCount == 0)
                 {
                     m_globalLockThread = null;
+                    m_logger.log(Logger.LOG_DEBUG, 
+                            "releaseGlobalLock() - global lock released, notifying bundle lock"); 
                     m_bundleLock.notifyAll();
                 }
             }
