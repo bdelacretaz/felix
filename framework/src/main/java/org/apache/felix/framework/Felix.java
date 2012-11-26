@@ -4876,8 +4876,6 @@ public class Felix extends BundleImpl implements Framework
             {
                 try
                 {
-                    m_logger.log(Logger.LOG_DEBUG, 
-                            "acquireInstallLock() waiting on installRequestLock_Priority1");  
                     m_installRequestLock_Priority1.wait();
                 }
                 catch (InterruptedException ex)
@@ -4971,7 +4969,6 @@ public class Felix extends BundleImpl implements Framework
 
                 try
                 {
-                    m_logger.log(Logger.LOG_DEBUG, "acquireBundleLock() waiting on bundleLock"); 
                     m_bundleLock.wait();
                 }
                 catch (InterruptedException ex)
@@ -5019,8 +5016,11 @@ public class Felix extends BundleImpl implements Framework
             // then remove it from the held lock map.
             if (bundle.getLockingThread() == null)
             {
-                m_logger.log(Logger.LOG_DEBUG, 
-                        "releaseBundleLock() notifying bundleLock"); 
+                if (m_logger.getLogLevel() >= Logger.LOG_DEBUG) {
+                    m_logger.log(Logger.LOG_DEBUG, 
+                            "releaseBundleLock() notifying bundleLock, locking thread="
+                             + bundle.getLockingThread());
+                }
                 m_bundleLock.notifyAll();
             }
         }
@@ -5058,7 +5058,6 @@ public class Felix extends BundleImpl implements Framework
                 // Now wait for the global lock.
                 try
                 {
-                    m_logger.log(Logger.LOG_DEBUG, "acquireGlobalLock() waiting on bundleLock");
                     m_bundleLock.wait();
                 }
                 catch (InterruptedException ex)
