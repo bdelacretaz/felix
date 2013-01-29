@@ -49,7 +49,7 @@ function displayConfigForm(obj) {
     var trEl = tr( );
     parent.appendChild( trEl );
     
-    var tdEl = td( null, { colSpan: "2" } );
+    var tdEl = td( null, { colSpan: "3" } );
     trEl.appendChild( tdEl );
     
     var formEl = createElement( "form", null, {
@@ -107,7 +107,7 @@ function displayConfigForm(obj) {
     if (obj.description)
     {
         trEl = tr( );
-        tdEl = td( null, { colSpan: "2" } );
+        tdEl = td( null, { colSpan: "3" } );
         addText( tdEl, obj.description );
         trEl.appendChild( tdEl );
         bodyEl.appendChild( trEl );
@@ -115,7 +115,7 @@ function displayConfigForm(obj) {
     
     if (obj.properties)
     {
-        printForm(bodyEl, obj.properties);
+        printForm(bodyEl, obj.properties, obj.pid);
     }
 
     printConfigurationInfo(parent, obj);
@@ -134,14 +134,15 @@ function displayConfigForm(obj) {
 		.dialog('open'));
 }
 
-function printForm( /* Element */ parent, /* Object */ properties ) {
+function printForm( /* Element */ parent, /* Object */ properties, /* String */ pid ) {
     var propList;
     for (var prop in properties)
     {
         var attr = properties[prop];
-  
+        var helpLink = createElement("span", null, { class:"configHelpLink", "data-config-param":prop, "data-config-pid":pid});
         var trEl = tr( null, null, [
-                td( null, null, [ text( attr.name ) ] )
+                td( null, null, [ text( attr.name ) ] ),
+                td( null, null, [ helpLink ] )
             ]);
         parent.appendChild( trEl );
 
