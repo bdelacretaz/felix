@@ -53,6 +53,7 @@ import org.apache.felix.webconsole.WebConsoleSecurityProvider;
 import org.apache.felix.webconsole.internal.OsgiManagerPlugin;
 import org.apache.felix.webconsole.internal.Util;
 import org.apache.felix.webconsole.internal.core.BundlesServlet;
+import org.apache.felix.webconsole.internal.core.OverridableResourcesServlet;
 import org.apache.felix.webconsole.internal.filter.FilteringResponseWrapper;
 import org.apache.felix.webconsole.internal.i18n.ResourceBundleManager;
 import org.apache.felix.webconsole.internal.misc.ConfigurationRender;
@@ -212,6 +213,9 @@ public class OsgiManager extends GenericServlet
 
     // true if the OsgiManager is registered as a Servlet with the HttpService
     private boolean httpServletRegistered;
+
+    // true if the OverridableResourcesServlet is registered as a Servlet with the HttpService
+    private OverridableResourcesServlet overridableResourcesServlet;
 
     // true if the resources have been registered with the HttpService
     private boolean httpResourcesRegistered;
@@ -845,6 +849,12 @@ public class OsgiManager extends GenericServlet
             httpService.registerServlet(this.webManagerRoot, this, servletConfig,
                 httpContext);
             httpServletRegistered = true;
+            
+            // register the OverridableResourcesServlet and take note
+            overridableResourcesServlet = new OverridableResourcesServlet();
+            overridableResourcesServlet.activate(bundleContext);
+            httpService.registerServlet(this.webManagerRoot + OverridableResourcesServlet.DEFAULT_ALIAS, 
+                    overridableResourcesServlet, servletConfig, httpContext);
 
             // register resources and take of this
             httpService.registerResources(this.webManagerRoot + "/res", "/res",
@@ -884,6 +894,20 @@ public class OsgiManager extends GenericServlet
                     "unbindHttpService: Failed unregistering Resources", t);
             }
             httpResourcesRegistered = false;
+        }
+        
+        if(overridableResourcesServlet != null) {
+            try
+            {
+                httpService.unregister(this.webManagerRoot + OverridableResourcesServlet.DEFAULT_ALIAS);
+            }
+            catch (Throwable t)
+            {
+                log(LogService.LOG_WARNING,
+                    "unbindHttpService: Failed unregistering OverridableResourcesServlet", t);
+            }
+            overridableResourcesServlet.deactivate();
+            overridableResourcesServlet = null;
         }
 
         if (httpServletRegistered)
