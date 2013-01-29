@@ -225,6 +225,10 @@ class PluginHolder implements ServiceListener
      * resource bundle if the first character of the title is a percent
      * sign (%). Titles not prefixed with a percent sign are added to the
      * map unmodified.
+     * <p>
+     * The special entry {@code felix.webconsole.labelMap} is the flat,
+     * unstructured map of labels to titles which is used as the
+     * respective request attribute (see FELIX-3833).
      *
      * @param resourceBundleManager The ResourceBundleManager providing
      *      localized titles
@@ -232,17 +236,32 @@ class PluginHolder implements ServiceListener
      *
      * @return The localized map of labels to titles
      */
-    Map getLocalizedLabelMap( final ResourceBundleManager resourceBundleManager, final Locale locale )
+    Map getLocalizedLabelMap( final ResourceBundleManager resourceBundleManager, final Locale locale, final String defaultCategory )
     {
         final Map map = new HashMap();
+        final Map flatMap = new HashMap();
         Plugin[] plugins = getPlugins();
         for ( int i = 0; i < plugins.length; i++ )
         {
             final Plugin plugin = plugins[i];
 
-            if (!plugin.isEnabled()) {
+            if ( !plugin.isEnabled() )
+            {
                 continue;
             }
+
+            // support only one level for now
+            Map categoryMap = null;
+            String category = plugin.getCategory();
+            if ( category == null || category.trim().length() == 0 )
+            {
+                // FELIX-3798 configured default category
+                category = defaultCategory;
+            }
+
+            // TODO: FELIX-3769; translate the Category
+
+            categoryMap = findCategoryMap( map, category );
 
             final String label = plugin.getLabel();
             String title = plugin.getTitle();
@@ -259,10 +278,41 @@ class PluginHolder implements ServiceListener
                     /* ignore missing resource - use default title */
                 }
             }
-            map.put( label, title );
+
+            categoryMap.put( label, title );
+            flatMap.put( label, title );
         }
 
+        // flat map of labels to titles (FELIX-3833)
+        map.put( WebConsoleConstants.ATTR_LABEL_MAP, flatMap );
+
         return map;
+    }
+
+
+    private Map findCategoryMap( Map map, String categoryPath )
+    {
+        Map categoryMap = null;
+        Map searchMap = map;
+
+        String categories[] = categoryPath.split( "/" );
+
+        for ( int i = 0; i < categories.length; i++ )
+        {
+            String categoryKey = "category." + categories[i];
+            if ( searchMap.containsKey( categoryKey ) )
+            {
+                categoryMap = ( Map ) searchMap.get( categoryKey );
+            }
+            else
+            {
+                categoryMap = new HashMap();
+                searchMap.put( categoryKey, categoryMap );
+            }
+            searchMap = categoryMap;
+        }
+
+        return categoryMap;
     }
 
 
@@ -423,7 +473,6 @@ class PluginHolder implements ServiceListener
         private String title;
         private AbstractWebConsolePlugin consolePlugin;
 
-
         protected Plugin( final PluginHolder holder, final String label )
         {
             this.holder = holder;
@@ -515,7 +564,6 @@ class PluginHolder implements ServiceListener
             return title;
         }
 
-
         protected String doGetTitle()
         {
             // get the service now
@@ -527,6 +575,17 @@ class PluginHolder implements ServiceListener
             return ( consolePlugin != null ) ? consolePlugin.getTitle() : null;
         }
 
+        // methods added to support categories
+
+        final String getCategory() {
+        	return doGetCategory();
+        }
+
+        protected String doGetCategory() {
+        	// get the service now
+            final AbstractWebConsolePlugin consolePlugin = getConsolePlugin();
+            return ( consolePlugin != null ) ? consolePlugin.getCategory() : null;
+        }
 
         final AbstractWebConsolePlugin getConsolePlugin()
         {
@@ -641,6 +700,18 @@ class PluginHolder implements ServiceListener
             setTitle(getLabel());
 
             return super.doGetTitle();
+        }
+
+        // added to support categories
+        protected String doGetCategory() {
+            // check service Reference
+            final String category = getProperty( serviceReference, WebConsoleConstants.PLUGIN_CATEGORY );
+            if ( category != null )
+            {
+                return category;
+            }
+
+            return super.doGetCategory();
         }
 
         protected AbstractWebConsolePlugin doGetConsolePlugin()

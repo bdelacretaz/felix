@@ -54,14 +54,11 @@ public class AdapterServiceBuilder extends AbstractBuilder
         String added = srvMeta.getString(Params.added, null);
         String changed = srvMeta.getString(Params.changed, null);
         String removed = srvMeta.getString(Params.removed, null);
-        
-        if (field != null && (added != null || changed != null || removed != null))
+        String swap = srvMeta.getString(Params.swap, null);
+
+        if (field != null && (added != null || changed != null || removed != null || swap != null))
         {
-            throw new IllegalArgumentException("autoconfig field " + field + " cant be defined with both added/changed/removed calllbacks");
-        }
-        if (field == null && added == null && (changed != null || removed != null))
-        {
-            throw new IllegalArgumentException("missing added callback");
+            throw new IllegalArgumentException("autoconfig field " + field + " can't be defined with both added/changed/removed/swap calllbacks");
         }
         
         Component c;
@@ -72,9 +69,9 @@ public class AdapterServiceBuilder extends AbstractBuilder
         }
         else
         {
-            if (added != null)
+            if (added != null || changed != null || removed != null || swap != null)
             {
-                c = dm.createAdapterService(adapteeService, adapteeFilter, added, changed, removed);
+                c = dm.createAdapterService(adapteeService, adapteeFilter, added, changed, removed, swap);
 
             }
             else

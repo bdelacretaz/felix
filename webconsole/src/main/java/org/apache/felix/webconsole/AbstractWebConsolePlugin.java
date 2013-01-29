@@ -29,6 +29,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.*;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.felix.webconsole.internal.servlet.OsgiManager;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.service.log.LogService;
@@ -110,6 +111,24 @@ public abstract class AbstractWebConsolePlugin extends HttpServlet
     public String getServletName()
     {
         return getTitle();
+    }
+
+
+    /**
+     * This method should return category string which will be used to render
+     * the plugin in the navigation menu. Default implementation returns null,
+     * which will result in the plugin link rendered as top level menu item.
+     * Concrete implementations wishing to be rendered as a sub-menu item under
+     * a category should override this method and return a string or define
+     * <code>felix.webconsole.category</code> OSGi property. Currently only
+     * single level categories are supported. So, this should be a simple
+     * String.
+     *
+     * @return category
+     */
+    public String getCategory()
+    {
+        return null;
     }
 
 
@@ -610,61 +629,18 @@ public abstract class AbstractWebConsolePlugin extends HttpServlet
     protected void renderTopNavigation( HttpServletRequest request, PrintWriter pw )
     {
         // assume pathInfo to not be null, else this would not be called
-        boolean linkToCurrent = true;
         String current = request.getPathInfo();
         int slash = current.indexOf( "/", 1 ); //$NON-NLS-1$
         if ( slash < 0 )
         {
             slash = current.length();
-            linkToCurrent = false;
         }
         current = current.substring( 1, slash );
 
-        boolean disabled = false;
         String appRoot = ( String ) request.getAttribute( WebConsoleConstants.ATTR_APP_ROOT );
-        Map labelMap = ( Map ) request.getAttribute( WebConsoleConstants.ATTR_LABEL_MAP );
-        if ( labelMap != null )
-        {
 
-            // prepare the navigation
-            SortedMap map = new TreeMap( String.CASE_INSENSITIVE_ORDER );
-            for ( Iterator ri = labelMap.entrySet().iterator(); ri.hasNext(); )
-            {
-                Map.Entry labelMapEntry = ( Map.Entry ) ri.next();
-                if ( labelMapEntry.getKey() == null )
-                {
-                    // ignore renders without a label
-                }
-                else if ( disabled || current.equals( labelMapEntry.getKey() ) )
-                {
-                    if ( linkToCurrent )
-                    {
-                        map.put( labelMapEntry.getValue(), "<div class='ui-state-active'><a href='" + appRoot + "/" //$NON-NLS-1$ //$NON-NLS-2$
-                                + labelMapEntry.getKey() + "'>" + labelMapEntry.getValue() + "</a></div>"); //$NON-NLS-1$ //$NON-NLS-2$
-                    }
-                    else
-                    {
-                        map.put( labelMapEntry.getValue(), "<div class='ui-state-active'><span>" + labelMapEntry.getValue() //$NON-NLS-1$
-                            + "</span></div>"); //$NON-NLS-1$
-                    }
-                }
-                else
-                {
-                    map.put( labelMapEntry.getValue(), "<div class='ui-state-default'><a href='" + appRoot + "/" + labelMapEntry.getKey() + "'>" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                        + labelMapEntry.getValue() + "</a></div>"); //$NON-NLS-1$
-                }
-            }
-
-            // render the navigation
-            pw.println("<div id='technav' class='ui-widget ui-widget-header'>"); //$NON-NLS-1$
-            for ( Iterator li = map.values().iterator(); li.hasNext(); )
-            {
-                pw.print(' ');
-                pw.println( li.next() );
-            }
-            pw.println( "</div>" ); //$NON-NLS-1$
-
-        }
+        Map menuMap = ( Map ) request.getAttribute( OsgiManager.ATTR_LABEL_MAP_CATEGORIZED );
+        this.renderMenu( menuMap, appRoot, pw );
 
         // render lang-box
         Map langMap = (Map) request.getAttribute(WebConsoleConstants.ATTR_LANG_MAP);
@@ -705,8 +681,47 @@ public abstract class AbstractWebConsolePlugin extends HttpServlet
         }
     }
 
-    private static final void printLocaleElement(PrintWriter pw, String appRoot,
-        Object langCode, Object langName)
+
+    protected void renderMenu( Map menuMap, String appRoot, PrintWriter pw )
+    {
+        if ( menuMap != null )
+        {
+            SortedMap categoryMap = sortMenuCategoryMap( menuMap, appRoot );
+            pw.println( "<ul id=\"navmenu\">" );
+            renderSubmenu( categoryMap, appRoot, pw, 0 );
+            pw.println( "</ul>" );
+        }
+    }
+
+
+    private void renderMenu( Map menuMap, String appRoot, PrintWriter pw, int level )
+    {
+        pw.println( "<ul class=\"navMenuLevel-" + level + "\">" );
+        renderSubmenu( menuMap, appRoot, pw, level );
+        pw.println( "</ul>" );
+    }
+
+
+    private void renderSubmenu( Map menuMap, String appRoot, PrintWriter pw, int level )
+    {
+        String liStyleClass = " class=\"navMenuItem-" + level + "\"";
+        Iterator itr = menuMap.keySet().iterator();
+        while ( itr.hasNext() )
+        {
+            String key = ( String ) itr.next();
+            MenuItem menuItem = ( MenuItem ) menuMap.get( key );
+            pw.println( "<li" + liStyleClass + ">" + menuItem.getLink() );
+            Map subMenu = menuItem.getSubMenu();
+            if ( subMenu != null )
+            {
+                renderMenu( subMenu, appRoot, pw, level + 1 );
+            }
+            pw.println( "</li>" );
+        }
+    }
+
+
+    private static final void printLocaleElement( PrintWriter pw, String appRoot, Object langCode, Object langName )
     {
         pw.print("  <img src='"); //$NON-NLS-1$
         pw.print(appRoot);
@@ -847,7 +862,6 @@ public abstract class AbstractWebConsolePlugin extends HttpServlet
         return FOOTER;
     }
 
-
     /**
      * Reads the <code>templateFile</code> as a resource through the class
      * loader of this class converting the binary data into a string using
@@ -947,4 +961,89 @@ public abstract class AbstractWebConsolePlugin extends HttpServlet
         return url;
     }
 
+
+    private SortedMap sortMenuCategoryMap( Map map, String appRoot )
+    {
+        SortedMap sortedMap = new TreeMap( String.CASE_INSENSITIVE_ORDER );
+        Iterator keys = map.keySet().iterator();
+        while ( keys.hasNext() )
+        {
+            String key = ( String ) keys.next();
+            if ( key.startsWith( "category." ) )
+            {
+                SortedMap categoryMap = sortMenuCategoryMap( ( Map ) map.get( key ), appRoot );
+                String title = key.substring( key.indexOf( '.' ) + 1 );
+                if ( sortedMap.containsKey( title ) )
+                {
+                    ( ( MenuItem ) sortedMap.get( title ) ).setSubMenu( categoryMap );
+                }
+                else
+                {
+                    String link = "<a href=\"#\">" + title + "</a>";
+                    MenuItem menuItem = new MenuItem( link, categoryMap );
+                    sortedMap.put( title, menuItem );
+                }
+            }
+            else
+            {
+                String title = ( String ) map.get( key );
+                String link = "<a href=\"" + appRoot + "/" + key + "\">" + title + "</a>";
+                if ( sortedMap.containsKey( title ) )
+                {
+                    ( ( MenuItem ) sortedMap.get( title ) ).setLink( link );
+                }
+                else
+                {
+                    MenuItem menuItem = new MenuItem( link );
+                    sortedMap.put( title, menuItem );
+                }
+            }
+
+        }
+        return sortedMap;
+    }
+
+    private static class MenuItem
+    {
+    private String link;
+        private Map subMenu;
+
+
+        public MenuItem( String link )
+        {
+            this.link = link;
+        }
+
+
+        public MenuItem( String link, Map subMenu )
+        {
+            super();
+            this.link = link;
+            this.subMenu = subMenu;
+        }
+
+
+        public String getLink()
+        {
+            return link;
+        }
+
+
+        public void setLink( String link )
+        {
+            this.link = link;
+        }
+
+
+        public Map getSubMenu()
+        {
+            return subMenu;
+        }
+
+
+        public void setSubMenu( Map subMenu )
+        {
+            this.subMenu = subMenu;
+        }
+    }
 }

@@ -92,13 +92,19 @@ public class OsgiManager extends GenericServlet
 
     /**
      * Old name of the request attribute providing the mappings from label to
-     * page title. This attribute is no deprecated and replaced by
+     * page title. This attribute is now deprecated and replaced by
      * {@link WebConsoleConstants#ATTR_LABEL_MAP}.
      *
      * @deprecated use {@link WebConsoleConstants#ATTR_LABEL_MAP} instead
      */
     private static final String ATTR_LABEL_MAP_OLD = OsgiManager.class.getName()
         + ".labelMap";
+
+    /**
+     * The name of the (internal) request attribute providing the categorized
+     * label map structure.
+     */
+    public static final String ATTR_LABEL_MAP_CATEGORIZED = WebConsoleConstants.ATTR_LABEL_MAP + ".categorized";
 
     /**
      * The name and value of a parameter which will prevent redirection to a
@@ -135,6 +141,8 @@ public class OsgiManager extends GenericServlet
 
     static final String PROP_PASSWORD = "password"; //$NON-NLS-1$
 
+    static final String PROP_CATEGORY = "category"; //$NON-NLS-1$
+
     static final String PROP_ENABLED_PLUGINS = "plugins"; //$NON-NLS-1$
 
     static final String PROP_LOG_LEVEL = "loglevel"; //$NON-NLS-1$
@@ -153,6 +161,8 @@ public class OsgiManager extends GenericServlet
 
     static final String DEFAULT_PASSWORD = "admin"; //$NON-NLS-1$
 
+    static final String DEFAULT_CATEGORY = "Main"; //$NON-NLS-1$
+
     static final String DEFAULT_HTTP_SERVICE_SELECTOR = ""; //$NON-NLS-1$
 
     /**
@@ -162,7 +172,7 @@ public class OsgiManager extends GenericServlet
     static final String DEFAULT_MANAGER_ROOT = "/system/console"; //$NON-NLS-1$
 
     static final String[] PLUGIN_CLASSES = {
-            "org.apache.felix.webconsole.internal.compendium.ConfigurationAdminConfigurationPrinter", //$NON-NLS-1$
+            "org.apache.felix.webconsole.internal.configuration.ConfigurationAdminConfigurationPrinter", //$NON-NLS-1$
             "org.apache.felix.webconsole.internal.compendium.PreferencesConfigurationPrinter", //$NON-NLS-1$
             "org.apache.felix.webconsole.internal.compendium.WireAdminConfigurationPrinter", //$NON-NLS-1$
             "org.apache.felix.webconsole.internal.core.BundlesConfigurationPrinter", //$NON-NLS-1$
@@ -172,7 +182,7 @@ public class OsgiManager extends GenericServlet
             "org.apache.felix.webconsole.internal.misc.ThreadPrinter", }; //$NON-NLS-1$
 
     static final String[] PLUGIN_MAP = {
-            "org.apache.felix.webconsole.internal.compendium.ConfigManager", "configMgr", //$NON-NLS-1$ //$NON-NLS-2$
+            "org.apache.felix.webconsole.internal.configuration.ConfigManager", "configMgr", //$NON-NLS-1$ //$NON-NLS-2$
             "org.apache.felix.webconsole.internal.compendium.LogServlet", "logs", //$NON-NLS-1$ //$NON-NLS-2$
             "org.apache.felix.webconsole.internal.core.BundlesServlet", "bundles", //$NON-NLS-1$ //$NON-NLS-2$
             "org.apache.felix.webconsole.internal.core.ServicesServlet", "services", //$NON-NLS-1$ //$NON-NLS-2$
@@ -220,6 +230,8 @@ public class OsgiManager extends GenericServlet
     ResourceBundleManager resourceBundleManager;
 
     private int logLevel = DEFAULT_LOG_LEVEL;
+
+    private String defaultCategory = DEFAULT_CATEGORY;
 
     public OsgiManager(BundleContext bundleContext)
     {
@@ -323,6 +335,23 @@ public class OsgiManager extends GenericServlet
             {
                 public Object getService( Bundle bundle, ServiceRegistration registration )
                 {
+                    /*
+                     * Explicitly load the class through the class loader to dynamically
+                     * wire the API if not wired yet. Implicit loading by creating a
+                     * class instance does not seem to properly work wiring the API
+                     * in time.
+                     */
+                    try
+                    {
+                        OsgiManager.this.getClass().getClassLoader()
+                            .loadClass( "org.osgi.service.metatype.MetaTypeProvider" );
+                        return new ConfigurationMetatypeSupport( OsgiManager.this );
+                    }
+                    catch ( ClassNotFoundException cnfe )
+                    {
+                        // ignore
+                    }
+
                     return new ConfigurationSupport( OsgiManager.this );
                 }
 
@@ -421,7 +450,7 @@ public class OsgiManager extends GenericServlet
         // (we are authorative for our URL space and no other servlet should interfere)
         res.flushBuffer();
     }
-    
+
     private void ensureLocaleCookieSet(HttpServletRequest request, HttpServletResponse response, Locale locale) {
         Cookie[] cookies = request.getCookies();
         boolean hasCookie = false;
@@ -467,19 +496,20 @@ public class OsgiManager extends GenericServlet
         AbstractWebConsolePlugin plugin = getConsolePlugin(label);
         if (plugin != null)
         {
-            final Map labelMap = holder.getLocalizedLabelMap(resourceBundleManager,
-                locale);
+            final Map labelMap = holder.getLocalizedLabelMap( resourceBundleManager, locale, this.defaultCategory );
+            final Object flatLabelMap = labelMap.remove( WebConsoleConstants.ATTR_LABEL_MAP );
 
             // the official request attributes
             request.setAttribute(WebConsoleConstants.ATTR_LANG_MAP, getLangMap());
-            request.setAttribute(WebConsoleConstants.ATTR_LABEL_MAP, labelMap);
+            request.setAttribute(WebConsoleConstants.ATTR_LABEL_MAP, flatLabelMap);
+            request.setAttribute( ATTR_LABEL_MAP_CATEGORIZED, labelMap );
             request.setAttribute(WebConsoleConstants.ATTR_APP_ROOT,
                 request.getContextPath() + request.getServletPath());
             request.setAttribute(WebConsoleConstants.ATTR_PLUGIN_ROOT,
                 request.getContextPath() + request.getServletPath() + '/' + label);
 
             // deprecated request attributes
-            request.setAttribute(ATTR_LABEL_MAP_OLD, labelMap);
+            request.setAttribute(ATTR_LABEL_MAP_OLD, flatLabelMap);
             request.setAttribute(ATTR_APP_ROOT_OLD,
                 request.getContextPath() + request.getServletPath());
 
@@ -915,6 +945,9 @@ public class OsgiManager extends GenericServlet
         {
             newWebManagerRoot = "/" + newWebManagerRoot; //$NON-NLS-1$
         }
+
+        // default category
+        this.defaultCategory = ConfigurationUtil.getProperty( config, PROP_CATEGORY, DEFAULT_CATEGORY );
 
         // get the HTTP Service selector (and dispose tracker for later
         // recreation)

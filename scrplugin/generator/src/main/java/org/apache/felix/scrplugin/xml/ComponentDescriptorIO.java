@@ -20,6 +20,7 @@ package org.apache.felix.scrplugin.xml;
 
 import java.awt.Component;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.security.Provider.Service;
 import java.util.ArrayList;
@@ -183,7 +184,7 @@ public class ComponentDescriptorIO {
     protected static void generateXML(final DescriptionContainer module,
             final List<ComponentContainer> components,
             final File descriptorFile,
-            final Log logger) throws SAXException {
+            final Log logger) throws SAXException, IOException, TransformerException {
         logger.info("Writing " + components.size() + " Service Component Descriptors to "
                 + descriptorFile);
         final ContentHandler contentHandler = IOUtils.getSerializer(descriptorFile);
@@ -336,10 +337,16 @@ public class ComponentDescriptorIO {
     protected static void generatePropertyXML(PropertyDescription property, ContentHandler contentHandler) throws SAXException {
         final AttributesImpl ai = new AttributesImpl();
         IOUtils.addAttribute(ai, ATTR_NAME, property.getName());
-        if ( property.getType() != PropertyType.String ) {
+        if ( property.getType() != PropertyType.String && property.getType() != PropertyType.Passwort) {
             IOUtils.addAttribute(ai, PROPERTY_ATTR_TYPE, property.getType());
         }
-        IOUtils.addAttribute(ai, PROPERTY_ATTR_VALUE, property.getValue());
+        String value = property.getValue();
+        if ( value != null ) {
+            if ( property.getType() == PropertyType.Character || property.getType() == PropertyType.Char ) {
+                value = String.valueOf((int)value.charAt(0));
+            }
+            IOUtils.addAttribute(ai, PROPERTY_ATTR_VALUE, value);
+        }
 
         IOUtils.indent(contentHandler, 2);
         contentHandler.startElement(INNER_NAMESPACE_URI, ComponentDescriptorIO.PROPERTY, ComponentDescriptorIO.PROPERTY_QNAME, ai);
@@ -348,7 +355,11 @@ public class ComponentDescriptorIO {
             IOUtils.text(contentHandler, "\n");
             for (int i = 0; i < property.getMultiValue().length; i++) {
                 IOUtils.indent(contentHandler, 3);
-                IOUtils.text(contentHandler, property.getMultiValue()[i]);
+                value = property.getMultiValue()[i];
+                if ( property.getType() == PropertyType.Character || property.getType() == PropertyType.Char ) {
+                    value = String.valueOf((int)value.charAt(0));
+                }
+                IOUtils.text(contentHandler, value);
                 IOUtils.newline(contentHandler);
             }
             IOUtils.indent(contentHandler, 2);
@@ -554,7 +565,13 @@ public class ComponentDescriptorIO {
                         }
 
                         if (attributes.getValue(PROPERTY_ATTR_VALUE) != null) {
-                            prop.setValue(attributes.getValue(PROPERTY_ATTR_VALUE));
+                            if ( prop.getType() == PropertyType.Char || prop.getType() == PropertyType.Character ) {
+                                final int val = Integer.valueOf(attributes.getValue(PROPERTY_ATTR_VALUE));
+                                final Character c = Character.valueOf((char)val);
+                                prop.setValue(c.toString());
+                            } else {
+                                prop.setValue(attributes.getValue(PROPERTY_ATTR_VALUE));
+                            }
                             this.currentClass.add(prop);
                         } else {
                             // hold the property pending as we have a multi value
@@ -679,6 +696,11 @@ public class ComponentDescriptorIO {
                         int index = 0;
                         while (st.hasMoreTokens()) {
                             values[index] = st.nextToken();
+                            if ( this.pendingProperty.getType() == PropertyType.Char || this.pendingProperty.getType() == PropertyType.Character ) {
+                                final int val = Integer.valueOf(values[index]);
+                                final Character c = Character.valueOf((char)val);
+                                values[index] = c.toString();
+                            }
                             index++;
                         }
                         this.pendingProperty.setMultiValue(values);
@@ -742,21 +764,32 @@ public class ComponentDescriptorIO {
 
         final List<String> fileNames = new ArrayList<String>();
         if ( options.isGenerateSeparateDescriptors() ) {
+            final SpecVersion globalVersion = module.getOptions().getSpecVersion();
             for(final ComponentContainer component : components ) {
+                module.getOptions().setSpecVersion(component.getComponentDescription().getSpecVersion());
                 final File file = new File(descriptorDir, component.getClassDescription().getDescribedClass().getName() + ".xml");
                 try {
                     ComponentDescriptorIO.generateXML(module, Collections.singletonList(component), file, logger);
+                } catch (final IOException e) {
+                    throw new SCRDescriptorException("Unable to generate xml", file.toString(), e);
+                } catch (final TransformerException e) {
+                    throw new SCRDescriptorException("Unable to generate xml", file.toString(), e);
                 } catch (final SAXException e) {
                     throw new SCRDescriptorException("Unable to generate xml", file.toString(), e);
                 }
                 fileNames.add(PARENT_NAME + '/' + file.getName());
             }
+            module.getOptions().setSpecVersion(globalVersion);
         } else {
             if (descriptorFile == null) {
                 throw new SCRDescriptorFailureException("Descriptor file name must not be empty.");
             }
             try {
                 ComponentDescriptorIO.generateXML(module, components, descriptorFile, logger);
+            } catch (final IOException e) {
+                throw new SCRDescriptorException("Unable to generate xml", descriptorFile.toString(), e);
+            } catch (final TransformerException e) {
+                throw new SCRDescriptorException("Unable to generate xml", descriptorFile.toString(), e);
             } catch (final SAXException e) {
                 throw new SCRDescriptorException("Unable to generate xml", descriptorFile.toString(), e);
             }

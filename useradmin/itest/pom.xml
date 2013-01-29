@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <!--
     Licensed to the Apache Software Foundation (ASF) under one
     or more contributor license agreements.  See the NOTICE file
@@ -20,9 +21,9 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
-		<artifactId>felix-parent</artifactId>
 		<groupId>org.apache.felix</groupId>
-		<version>1.2.0</version>
+		<artifactId>felix-parent</artifactId>
+        <version>2.1</version>
         <relativePath>../../../pom/pom.xml</relativePath>
 	</parent>
 	<properties>
@@ -34,7 +35,7 @@
 		<pax.runner.version>1.7.6</pax.runner.version>
 	</properties>
 	<artifactId>org.apache.felix.useradmin.itest</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+	<version>1.0.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 	<description>Integration tests for the UserAdmin OSGi compendium service.</description>
 	<dependencies>
@@ -50,19 +51,19 @@
 			<version>${osgi.version}</version>
 		</dependency>
 		<dependency>
-            <groupId>org.apache.felix</groupId>
+			<groupId>org.apache.felix</groupId>
 			<artifactId>org.apache.felix.useradmin</artifactId>
+			<version>1.0.4-SNAPSHOT</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.felix</groupId>
+			<artifactId>org.apache.felix.useradmin.filestore</artifactId>
 			<version>1.0.3-SNAPSHOT</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-            <groupId>org.apache.felix</groupId>
-			<artifactId>org.apache.felix.useradmin.filestore</artifactId>
-			<version>1.0.2-SNAPSHOT</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-            <groupId>org.apache.felix</groupId>
+			<groupId>org.apache.felix</groupId>
 			<artifactId>org.apache.felix.dependencymanager</artifactId>
 			<version>3.0.0</version>
 			<scope>test</scope>
@@ -144,21 +145,23 @@
 					<source>1.6</source>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>rat-maven-plugin</artifactId>
-				<configuration>
-					<excludeSubProjects>false</excludeSubProjects>
-					<useEclipseDefaultExcludes>true</useEclipseDefaultExcludes>
-					<useMavenDefaultExcludes>true</useMavenDefaultExcludes>
-					<excludes>
-						<param>doc/*</param>
-						<param>maven-eclipse.xml</param>
-						<param>.checkstyle</param>
-						<param>.externalToolBuilders/*</param>
-					</excludes>
-				</configuration>
-			</plugin>
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+                <extensions>true</extensions>
+            </plugin>
+            <plugin>
+                <groupId>org.ops4j.pax.exam</groupId>
+                <artifactId>maven-paxexam-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generate-config</id>
+                        <goals>
+                            <goal>generate-depends-file</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
 		</plugins>
 	</build>
 </project>

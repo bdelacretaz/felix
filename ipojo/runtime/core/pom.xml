@@ -41,7 +41,7 @@
         <ipojo.package.version>1.8.4</ipojo.package.version>
 
         <!-- Embedded manipulator version -->
-        <ipojo.manipulator.version>1.9.0-SNAPSHOT</ipojo.manipulator.version>
+        <ipojo.manipulator.version>1.8.6</ipojo.manipulator.version>
     </properties>
 
     <description>
@@ -154,9 +154,10 @@
                             org.apache.felix.ipojo.handlers.configuration; version="${ipojo.package.version}",
                             org.apache.felix.ipojo.context; version="${ipojo.package.version}",
                             <!-- Embedded manipulator -->
-                            org.apache.felix.ipojo.manipulator; version="${ipojo.manipulator.version}",
+                            org.apache.felix.ipojo.manipulation*; version="${ipojo.manipulator.version}",
                             org.apache.felix.ipojo.xml.parser; version="${ipojo.manipulator.version}",
-                            org.apache.felix.ipojo.*; version="${ipojo.manipulator.version}",
+                            org.apache.felix.ipojo.manipulator*; version="${ipojo.manipulator.version}",
+                            org.apache.felix.ipojo.annotations*; version="${ipojo.package.version}",
                             <!-- Compendium packages -->
                             org.osgi.service.cm,
                             org.osgi.service.log

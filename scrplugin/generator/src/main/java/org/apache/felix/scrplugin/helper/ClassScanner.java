@@ -56,6 +56,9 @@ import org.apache.felix.scrplugin.annotations.ScannedAnnotation;
 import org.apache.felix.scrplugin.annotations.ScannedClass;
 import org.apache.felix.scrplugin.description.ClassDescription;
 import org.apache.felix.scrplugin.description.ComponentDescription;
+import org.apache.felix.scrplugin.description.PropertyDescription;
+import org.apache.felix.scrplugin.description.ReferenceDescription;
+import org.apache.felix.scrplugin.description.ServiceDescription;
 import org.apache.felix.scrplugin.xml.ComponentDescriptorIO;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Type;
@@ -146,6 +149,16 @@ public class ClassScanner {
                     if ( desc.getDescriptions(ComponentDescription.class).size() > 0) {
                         result.add(desc);
                         log.debug("Found component description " + desc + " in " + annotatedClass.getName());
+                    } else {
+                        // check whether one of the other annotations is used and log a warning (FELIX-3636)
+                        if ( desc.getDescription(PropertyDescription.class) != null
+                             || desc.getDescription(ReferenceDescription.class) != null
+                             || desc.getDescription(ServiceDescription.class) != null ) {
+                            iLog.addWarning("Class '" + src.getClassName() + "' contains SCR annotations, but not a" +
+                                 "@Component (or equivalent) annotation. Therefore no component descriptor is created for this" +
+                                 "class. Please add a @Component annotation and consider making it abstract.",
+                                 src.getFile().toString());
+                        }
                     }
                 } else {
                     this.allDescriptions.put(annotatedClass.getName(), new ClassDescription(annotatedClass, GENERATED));
@@ -211,47 +224,49 @@ public class ClassScanner {
             final List<MethodNode> methods = classNode.methods;
             if (methods != null) {
                 for (final MethodNode method : methods) {
+                    final String name = method.name;
+                    // check for constructor
+                    if ( !"<init>".equals(name) ) {
+                        @SuppressWarnings("unchecked")
+                        final List<AnnotationNode> annos = getAllAnnotations(method.invisibleAnnotations, method.visibleAnnotations);
+                        if (annos != null) {
+                            final Type[] signature = Type.getArgumentTypes(method.desc);
 
-                    @SuppressWarnings("unchecked")
-                    final List<AnnotationNode> annos = getAllAnnotations(method.invisibleAnnotations, method.visibleAnnotations);
-                    if (annos != null) {
-                        final String name = method.name;
-                        final Type[] signature = Type.getArgumentTypes(method.desc);
-
-                        final Method[] allMethods = annotatedClass.getDeclaredMethods();
-                        Method found = null;
-                        for (final Method m : allMethods) {
-                            if (m.getName().equals(name)) {
-                                if (m.getParameterTypes().length == 0 && (signature == null || signature.length == 0) ) {
-                                    found = m;
-                                }
-                                if (m.getParameterTypes().length > 0 && signature != null && m.getParameterTypes().length == signature.length) {
-                                    found = m;
-                                    for(int index = 0; index < m.getParameterTypes().length; index++ ) {
-                                        String parameterTypeName = m.getParameterTypes()[index].getName();
-                                        // Name of array parameters is returned with syntax [L<name>;, convert to <name>[]
-                                        Matcher matcher = ARRAY_PARAM_TYPE_NAME.matcher(parameterTypeName);
-                                        if (matcher.matches()) {
-                                            parameterTypeName = matcher.group(1) + "[]";
-                                        }
-                                        if (!parameterTypeName.equals(signature[index].getClassName()) &&
-                                                !m.getParameterTypes()[index].getSimpleName().equals(signature[index].getClassName())) {
-                                            found = null;
+                            final Method[] allMethods = annotatedClass.getDeclaredMethods();
+                            Method found = null;
+                            for (final Method m : allMethods) {
+                                if (m.getName().equals(name)) {
+                                    if (m.getParameterTypes().length == 0 && (signature == null || signature.length == 0) ) {
+                                        found = m;
+                                    }
+                                    if (m.getParameterTypes().length > 0 && signature != null && m.getParameterTypes().length == signature.length) {
+                                        found = m;
+                                        for(int index = 0; index < m.getParameterTypes().length; index++ ) {
+                                            String parameterTypeName = m.getParameterTypes()[index].getName();
+                                            // Name of array parameters is returned with syntax [L<name>;, convert to <name>[]
+                                            Matcher matcher = ARRAY_PARAM_TYPE_NAME.matcher(parameterTypeName);
+                                            if (matcher.matches()) {
+                                                parameterTypeName = matcher.group(1) + "[]";
+                                            }
+                                            if (!parameterTypeName.equals(signature[index].getClassName()) &&
+                                                    !m.getParameterTypes()[index].getSimpleName().equals(signature[index].getClassName())) {
+                                                found = null;
+                                            }
                                         }
                                     }
-                                }
-                                // if method is found return it now, to avoid resetting 'found' to null if next method has same name but different parameters
-                                if (found != null) {
-                                    break;
+                                    // if method is found return it now, to avoid resetting 'found' to null if next method has same name but different parameters
+                                    if (found != null) {
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        if (found == null) {
-                            throw new SCRDescriptorException("Annotated method " + name + " not found.",
-                                    annotatedClass.getName());
-                        }
-                        for (final AnnotationNode annotation : annos) {
-                            parseAnnotation(descriptions, annotation, found);
+                            if (found == null) {
+                                throw new SCRDescriptorException("Annotated method " + name + " not found.",
+                                        annotatedClass.getName());
+                            }
+                            for (final AnnotationNode annotation : annos) {
+                                parseAnnotation(descriptions, annotation, found);
+                            }
                         }
                     }
                 }
@@ -416,8 +431,8 @@ public class ClassScanner {
      * <p>
      * This method may be overwritten by extensions of this class.
      *
-     * @throws SCRDescriptorException May be thrown if an error occurrs
-     *             gethering the component descriptors.
+     * @throws SCRDescriptorException May be thrown if an error occurs
+     *             gathering the component descriptors.
      */
     private Map<String, ClassDescription> getComponentDescriptors()
             throws SCRDescriptorException {
@@ -481,7 +496,7 @@ public class ClassScanner {
      * be called by the {@link #getComponentDescriptors()} method to parse the
      * descriptors gathered in an implementation dependent way.
      *
-     * @throws SCRDescriptorException If an error occurrs reading the
+     * @throws SCRDescriptorException If an error occurs reading the
      *             descriptors from the stream.
      */
     private void readServiceComponentDescriptor(

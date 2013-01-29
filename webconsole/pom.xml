@@ -36,6 +36,11 @@
         http://felix.apache.org/site/apache-felix-web-console.html for more
         information on this bundle.
     </description>
+    
+    <properties>
+        <org.json.version>20070829</org.json.version>
+        <org.json.version.osgi>0.0.0.${org.json.version}</org.json.version.osgi>
+    </properties>
 
     <scm>
         <connection>scm:svn:http://svn.apache.org/repos/asf/felix/trunk/webconsole</connection>
@@ -122,12 +127,12 @@
                             org.apache.felix.webconsole.internal.OsgiManagerActivator
                         </Bundle-Activator>
                         <Export-Package>
-                            org.apache.felix.webconsole;version=3.1.2;provide:=true,
+                            org.apache.felix.webconsole;version=3.1.3;provide:=true,
                             org.apache.felix.webconsole.bundleinfo;version=1.0.0;provide:=true,
                             org.apache.felix.webconsole.i18n;version=1.0.0;provide:=true
                         </Export-Package>
                         <Import-Package>
-                            org.osgi.service.metatype;resolution:=optional,
+                            org.json.*;version=0,
                             javax.servlet.*;version=2.4,
                             org.apache.commons.io; version="[1.4,3)",
                             *
@@ -148,8 +153,7 @@
                         </Include-Resource>
                         <Embed-Dependency>
                             org.apache.felix.utils;inline=org/apache/felix/utils/manifest/**,
-                            org.apache.felix.framework;inline=org/apache/felix/framework/util/VersionRange**,
-                            org.osgi.compendium;inline=org/osgi/service/metatype/**
+                            org.apache.felix.framework;inline=org/apache/felix/framework/util/VersionRange**
                         </Embed-Dependency>
                         <_removeheaders>
                             Embed-Dependency,Private-Package,Include-Resource
@@ -174,8 +178,8 @@
                     </includes>
                     <excludes>
                         <exclude>src/main/appended-resources/**</exclude>
-                        <exclude>src/main/resources/res/lib/jquery-1.3.2.js</exclude>
-                        <exclude>src/main/resources/res/lib/jquery-ui-1.7.2.js</exclude>
+                        <exclude>src/main/resources/res/lib/jquery-1.8.3.js</exclude>
+                        <exclude>src/main/resources/res/lib/jquery-ui-1.9.2.js</exclude>
                         <exclude>src/main/resources/res/lib/jquery-ui-i18n-1.7.2.js</exclude>
                         <exclude>src/main/resources/res/lib/jquery.cookies-2.2.0.js</exclude>
                         <exclude>src/main/resources/res/lib/jquery.multifile-1.4.6.js</exclude>
@@ -184,11 +188,155 @@
                         <exclude>src/main/resources/res/lib/themes/**</exclude>
                         <exclude>src/main/resources/res/ui/ui.tabs.paging.js</exclude>
                         <exclude>src/main/resources/templates/*.html</exclude>
+                        <exclude>src/main/debug-resources/res/lib/**</exclude>
                     </excludes>
                 </configuration>
             </plugin>
         </plugins>
     </build>
+
+   <profiles>
+       <!--
+           The "all-in-one-bundle" profile builds a bundle including certain
+           3rd party libraries and classes, namely: Commons IO, Commons
+           FileUpload, JSON, and the OSGi ServiceTracker.
+           The "all-in-one-bundle" can be used in deployments where these
+           dependencies need not be deployed separately.
+       -->
+       <profile>
+           <id>all-in-one-bundle</id>
+           <activation><activeByDefault>true</activeByDefault></activation>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.apache.felix</groupId>
+                       <artifactId>maven-bundle-plugin</artifactId>
+                       <executions>
+                           <execution>
+                               <id>all-in-one-bundle</id>
+                               <goals>
+                                   <goal>bundle</goal>
+                               </goals>
+                               <configuration>
+                                   <classifier>all</classifier>
+                                   <instructions>
+                                       <Bundle-Name>
+                                           ${project.name} (All In One)
+                                       </Bundle-Name>
+                                       <Bundle-Version>
+                                           ${project.version}-all
+                                       </Bundle-Version>
+                                       <Export-Package>                                         
+                                            org.apache.commons.fileupload,
+                                            org.apache.commons.fileupload.disk,
+                                            org.apache.commons.fileupload.servlet,
+                                            org.apache.commons.fileupload.util,
+                                            org.apache.commons.io,
+                                            org.apache.commons.io.filefilter,
+                                            org.apache.commons.io.output,
+                                            org.json;version=${org.json.version.osgi},
+                                            org.apache.felix.status;version=1.0.0
+                                       </Export-Package>
+                                       <Embed-Dependency>
+                                           <!-- Import/Export-Package parsing -->
+                                           org.apache.felix.utils;inline=org/apache/felix/utils/manifest/**,
+                                           org.apache.felix.framework;inline=org/apache/felix/framework/util/VersionRange**,
+                                            
+                                           <!-- ServiceTracker -->
+                                           org.osgi.compendium;
+                                              inline=org/osgi/util/tracker/*,
+                                           org.apache.felix.status
+                                       </Embed-Dependency>
+                                       
+                                       <_removeheaders>
+                                           Embed-Dependency,Private-Package,Include-Resource
+                                       </_removeheaders>
+                                   </instructions>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+                   <!--
+                  <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-remote-resources-plugin</artifactId>
+                    <executions>
+                      <execution>
+                        <goals>
+                          <goal>process</goal>
+                        </goals>
+                        <configuration>
+                          <resourceBundles>
+                            <resourceBundle>org.apache:apache-jar-resource-bundle:1.4</resourceBundle>
+                          </resourceBundles>
+                        </configuration>
+                      </execution>
+                    </executions>
+                  </plugin>
+                  -->
+               </plugins>
+            </build>
+        </profile>
+        
+       <!--
+           The "debug" profile builds a bundle using the non-minified
+           JQuery libraries and CSS files instead to make debugging
+           JQuery related issues easier.
+       -->
+       <profile>
+           <id>debug-bundle</id>
+           <activation><activeByDefault>true</activeByDefault></activation>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.apache.felix</groupId>
+                       <artifactId>maven-bundle-plugin</artifactId>
+                       <executions>
+                           <execution>
+                               <id>debug-bundle</id>
+                               <goals>
+                                   <goal>bundle</goal>
+                               </goals>
+                               <configuration>
+                                   <classifier>debug</classifier>
+                                   <instructions>
+                                       <Bundle-Name>
+                                           ${project.name} (JQuery Debug)
+                                       </Bundle-Name>
+                                       <Bundle-Version>
+                                           ${project.version}-debug
+                                       </Bundle-Version>
+                                       <Include-Resource>
+                                           {maven-resources},
+                                           res=src/main/debug-resources/res
+                                       </Include-Resource>
+                                   </instructions>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+                   <!--
+                  <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-remote-resources-plugin</artifactId>
+                    <executions>
+                      <execution>
+                        <goals>
+                          <goal>process</goal>
+                        </goals>
+                        <configuration>
+                          <resourceBundles>
+                            <resourceBundle>org.apache:apache-jar-resource-bundle:1.4</resourceBundle>
+                          </resourceBundles>
+                        </configuration>
+                      </execution>
+                    </executions>
+                  </plugin>
+                  -->
+               </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <dependencies>
         <dependency>
@@ -228,9 +376,10 @@
         <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
-            <version>20070829</version>
+            <version>${org.json.version}</version>
             <scope>provided</scope>
         </dependency>
+        
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.shell</artifactId>
@@ -274,5 +423,11 @@
             <optional>true</optional>
         </dependency>
         
+        <dependency>
+            <groupId>org.apache.felix</groupId>
+            <artifactId>org.apache.felix.status</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 </project>

@@ -82,7 +82,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
      * @see #registerComponentHolder(String, ComponentHolder)
      * @see #unregisterComponentHolder(String)
      */
-    private final Map /* <ComponentRegistryKey, Object> */ m_componentHoldersByName;
+    private final Map<ComponentRegistryKey, ComponentHolder> m_componentHoldersByName;
 
     /**
      * The map of known components indexed by component configuration pid. The values are
@@ -101,7 +101,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
      * @see #unregisterComponentHolder(String)
      * @see ConfigurationSupport#configurationEvent(org.osgi.service.cm.ConfigurationEvent)
      */
-    private final Map m_componentHoldersByPid;
+    private final Map<String, Set<ComponentHolder>> m_componentHoldersByPid;
 
     /**
      * Map of components by component ID. This map indexed by the component
@@ -111,7 +111,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
      * @see #registerComponentId(AbstractComponentManager)
      * @see #unregisterComponentId(long)
      */
-    private final Map m_componentsById;
+    private final Map<Long, AbstractComponentManager> m_componentsById;
 
     /**
      * Counter to setup the component IDs as issued by the
@@ -130,7 +130,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
     // the ConfigurationAdmin service
     private ConfigurationSupport configurationSupport;
 
-    private final Map m_missingDependencies = new HashMap( );
+    private final Map<ServiceReference<?>, List<Entry>> m_missingDependencies = new HashMap<ServiceReference<?>, List<Entry>>( );
 
     protected ComponentRegistry( BundleContext context )
     {
@@ -333,27 +333,31 @@ public class ComponentRegistry implements ScrService, ServiceListener
     {
         // register the name if no registration for that name exists already
         final ComponentRegistryKey key = new ComponentRegistryKey( bundle, name );
-        final Object existingRegistration;
+        ComponentHolder existingRegistration = null;
+        boolean present;
         synchronized ( m_componentHoldersByName )
         {
-            existingRegistration = m_componentHoldersByName.get( key );
-            if ( existingRegistration == null )
+            present = m_componentHoldersByName.containsKey( key );
+            if ( !present )
             {
-                m_componentHoldersByName.put( key, key );
+                m_componentHoldersByName.put( key, null );
+            }
+            else
+            {
+                existingRegistration = m_componentHoldersByName.get( key );
             }
         }
 
         // there was a registration already, throw an exception and use the
         // existing registration to provide more information if possible
-        if ( existingRegistration != null )
+        if ( present )
         {
             String message = "The component name '" + name + "' has already been registered";
 
-            if ( existingRegistration instanceof ComponentHolder )
+            if ( existingRegistration != null )
             {
-                ComponentHolder c = ( ComponentHolder ) existingRegistration;
-                Bundle cBundle = c.getActivator().getBundleContext().getBundle();
-                ComponentMetadata cMeta = c.getComponentMetadata();
+                Bundle cBundle = existingRegistration.getActivator().getBundleContext().getBundle();
+                ComponentMetadata cMeta = existingRegistration.getComponentMetadata();
 
                 StringBuffer buf = new StringBuffer( message );
                 buf.append( " by Bundle " ).append( cBundle.getBundleId() );
@@ -388,7 +392,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
         synchronized ( m_componentHoldersByName )
         {
             // only register the component if there is a m_registration for it !
-            if ( !key.equals( m_componentHoldersByName.get( key ) ) )
+            if ( m_componentHoldersByName.get( key ) != null )
             {
                 // this is not expected if all works ok
                 throw new ComponentException( "The component name '" + component.getComponentMetadata().getName()
@@ -406,10 +410,10 @@ public class ComponentRegistry implements ScrService, ServiceListener
             // Since several components may refer to the same configuration pid, we have to
             // store the component holder in a Set, in order to be able to lookup every
             // components from a given pid.
-            Set set = (Set) m_componentHoldersByPid.get(configurationPid);
+            Set<ComponentHolder> set = m_componentHoldersByPid.get(configurationPid);
             if (set == null)
             {
-                set = new HashSet();
+                set = new HashSet<ComponentHolder>();
                 m_componentHoldersByPid.put(configurationPid, set);
             }
             set.add(component);
@@ -422,7 +426,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
      */
     public final ComponentHolder getComponentHolder( final Bundle bundle, final String name )
     {
-        Object entry;
+        ComponentHolder entry;
         synchronized ( m_componentHoldersByName )
         {
             entry = m_componentHoldersByName.get( new ComponentRegistryKey( bundle, name ) );
@@ -444,12 +448,12 @@ public class ComponentRegistry implements ScrService, ServiceListener
      * @return a iterator of ComponentHolder, or an empty iterator if no ComponentHolders
      * are found
      */
-    public final Iterator getComponentHoldersByPid(String pid)
+    public final Iterator<ComponentHolder> getComponentHoldersByPid(String pid)
     {
-        Set componentHoldersUsingPid = new HashSet();
+        Set<ComponentHolder> componentHoldersUsingPid = new HashSet<ComponentHolder>();
         synchronized (m_componentHoldersByPid)
         {
-            Set set = (Set) m_componentHoldersByPid.get(pid);
+            Set<ComponentHolder> set = m_componentHoldersByPid.get(pid);
             // only return the entry if non-null and not a reservation
             if (set != null)
             {
@@ -465,11 +469,11 @@ public class ComponentRegistry implements ScrService, ServiceListener
      * name reservations or {@link ComponentHolder} instances for actual
      * holders of components.
      */
-    private Object[] getComponentHolders()
+    private ComponentHolder[] getComponentHolders()
     {
         synchronized ( m_componentHoldersByName )
         {
-            return m_componentHoldersByName.values().toArray();
+            return m_componentHoldersByName.values().toArray( new ComponentHolder[ m_componentHoldersByName.size() ]);
         }
     }
 
@@ -494,17 +498,17 @@ public class ComponentRegistry implements ScrService, ServiceListener
      */
     final void unregisterComponentHolder( final ComponentRegistryKey key )
     {
-        Object component;
+        ComponentHolder component;
         synchronized ( m_componentHoldersByName )
         {
             component = m_componentHoldersByName.remove( key );
         }
 
-        if (component instanceof ComponentHolder) {
+        if (component != null) {
             synchronized (m_componentHoldersByPid)
             {
-                String configurationPid = ((ComponentHolder) component).getComponentMetadata().getConfigurationPid();
-                Set componentsForPid = (Set) m_componentHoldersByPid.get(configurationPid);
+                String configurationPid = component.getComponentMetadata().getConfigurationPid();
+                Set<ComponentHolder> componentsForPid = m_componentHoldersByPid.get(configurationPid);
                 if (componentsForPid != null)
                 {
                     componentsForPid.remove(component);
@@ -655,7 +659,7 @@ public class ComponentRegistry implements ScrService, ServiceListener
 
     public void missingServicePresent( final ServiceReference serviceReference, ComponentActorThread actor )
     {
-        final List dependencyManagers = ( List ) m_missingDependencies.remove( serviceReference );
+        final List<Entry> dependencyManagers = m_missingDependencies.remove( serviceReference );
         if ( dependencyManagers != null )
         {
             actor.schedule( new Runnable()
@@ -663,30 +667,58 @@ public class ComponentRegistry implements ScrService, ServiceListener
 
                 public void run()
                 {
-                    for ( Iterator i = dependencyManagers.iterator(); i.hasNext(); )
+                    for ( Entry entry : dependencyManagers )
                     {
-                        DependencyManager dm = ( DependencyManager ) i.next();
-                        dm.invokeBindMethodLate( serviceReference );
+                        entry.getDm().invokeBindMethodLate( serviceReference, entry.getTrackingCount() );
                     }
                 }
+
+                @Override
+                public String toString()
+                {
+                    return "Late binding task of reference " + serviceReference + " for dependencyManagers " + dependencyManagers;
+                }
+
             } );
         }
     }
 
-    public synchronized void registerMissingDependency( DependencyManager dependencyManager, ServiceReference serviceReference )
+    public synchronized void registerMissingDependency( DependencyManager dependencyManager, ServiceReference serviceReference, int trackingCount )
     {
         //check that the service reference is from scr
         if ( serviceReference.getProperty( ComponentConstants.COMPONENT_NAME ) == null || serviceReference.getProperty( ComponentConstants.COMPONENT_ID ) == null )
         {
             return;
         }
-        List dependencyManagers = ( List ) m_missingDependencies.get( serviceReference );
+        List<Entry> dependencyManagers = m_missingDependencies.get( serviceReference );
         if ( dependencyManagers == null )
         {
-            dependencyManagers = new ArrayList();
+            dependencyManagers = new ArrayList<Entry>();
             m_missingDependencies.put( serviceReference, dependencyManagers );
         }
-        dependencyManagers.add( dependencyManager );
+        dependencyManagers.add( new Entry( dependencyManager, trackingCount ) );
+    }
+
+    private static class Entry
+    {
+        private final DependencyManager dm;
+        private final int trackingCount;
+
+        private Entry( DependencyManager dm, int trackingCount )
+        {
+            this.dm = dm;
+            this.trackingCount = trackingCount;
+        }
+
+        public DependencyManager getDm()
+        {
+            return dm;
+        }
+
+        public int getTrackingCount()
+        {
+            return trackingCount;
+        }
     }
 
 }

@@ -19,11 +19,14 @@
 package org.apache.felix.scrplugin.xml;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+
+import javax.xml.transform.TransformerException;
 
 import org.apache.felix.scrplugin.Log;
 import org.apache.felix.scrplugin.Options;
@@ -47,7 +50,8 @@ import org.xml.sax.helpers.AttributesImpl;
  */
 public class MetaTypeIO {
 
-    private static final String NAMESPACE_URI = "http://www.osgi.org/xmlns/metatype/v1.0.0";
+    private static final String NAMESPACE_URI_10 = "http://www.osgi.org/xmlns/metatype/v1.0.0";
+    private static final String NAMESPACE_URI_12 = "http://www.osgi.org/xmlns/metatype/v1.2.0";
 
     private static final String INNER_NAMESPACE_URI = "";
 
@@ -121,6 +125,25 @@ public class MetaTypeIO {
     }
 
     /**
+     * Detect correct version to use.
+     * If password type is used, we have to use v1.2
+     */
+    private static String detectMetatypeVersion(final DescriptionContainer container) {
+        for(final ComponentContainer comp : container.getComponents()) {
+            if ( comp.getMetatypeContainer() != null ) {
+                final Iterator<MetatypeAttributeDefinition> i = comp.getMetatypeContainer().getProperties().iterator();
+                while ( i.hasNext() ) {
+                    final MetatypeAttributeDefinition ad = i.next();
+                    if ( ad.getType().equalsIgnoreCase("password") ) {
+                        return NAMESPACE_URI_12;
+                    }
+                }
+            }
+        }
+        return NAMESPACE_URI_10;
+    }
+
+    /**
      * Generate the xml top level element and start streaming
      * the meta data.
      * @param metaData
@@ -128,17 +151,19 @@ public class MetaTypeIO {
      * @throws SAXException
      */
     private static void write(final DescriptionContainer metaData, final List<ComponentContainer> components, final File file)
-            throws SCRDescriptorException {
+    throws SCRDescriptorException {
+        final String namespace = detectMetatypeVersion(metaData);
+
         try {
             final ContentHandler contentHandler = IOUtils.getSerializer(file);
 
             contentHandler.startDocument();
-            contentHandler.startPrefixMapping(PREFIX, NAMESPACE_URI);
+            contentHandler.startPrefixMapping(PREFIX, namespace);
 
             final AttributesImpl ai = new AttributesImpl();
             IOUtils.addAttribute(ai, "localization", MetaTypeService.METATYPE_DOCUMENTS_LOCATION + "/metatype");
 
-            contentHandler.startElement(NAMESPACE_URI, METADATA_ELEMENT, METADATA_ELEMENT_QNAME, ai);
+            contentHandler.startElement(namespace, METADATA_ELEMENT, METADATA_ELEMENT_QNAME, ai);
             IOUtils.newline(contentHandler);
 
             for(final ComponentContainer comp : metaData.getComponents()) {
@@ -149,10 +174,14 @@ public class MetaTypeIO {
             }
 
             // end wrapper element
-            contentHandler.endElement(NAMESPACE_URI, METADATA_ELEMENT, METADATA_ELEMENT_QNAME);
+            contentHandler.endElement(namespace, METADATA_ELEMENT, METADATA_ELEMENT_QNAME);
             IOUtils.newline(contentHandler);
             contentHandler.endPrefixMapping(PREFIX);
             contentHandler.endDocument();
+        } catch (final IOException e) {
+            throw new SCRDescriptorException("Unable to generate xml", file.toString(), e);
+        } catch (final TransformerException e) {
+            throw new SCRDescriptorException("Unable to generate xml", file.toString(), e);
         } catch (final SAXException e) {
             throw new SCRDescriptorException("Unable to generate xml", file.toString(), e);
         }

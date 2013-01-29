@@ -763,6 +763,10 @@ public class Felix extends BundleImpl implements Framework
                 // so create a gate for that purpose.
                 m_shutdownGate = new ThreadGate();
 
+                // Start services
+                m_fwkWiring.start();
+                m_fwkStartLevel.start();
+
                 try
                 {
                     Felix.m_secureAction.startActivator(
@@ -1563,13 +1567,16 @@ public class Felix extends BundleImpl implements Framework
         {
             return null;
         }
-        try
+        else if (bundle.getState() == Bundle.INSTALLED)
         {
-            resolveBundleRevision(bundle.adapt(BundleRevision.class));
-        }
-        catch (Exception ex)
-        {
-            // Ignore.
+            try
+            {
+                resolveBundleRevision(bundle.adapt(BundleRevision.class));
+            }
+            catch (Exception ex)
+            {
+                // Ignore.
+            }
         }
 
         // If the bundle revision isn't resolved, then just search
@@ -1599,13 +1606,16 @@ public class Felix extends BundleImpl implements Framework
         {
             return null;
         }
-        try
+        else if (bundle.getState() == Bundle.INSTALLED)
         {
-            resolveBundleRevision(bundle.adapt(BundleRevision.class));
-        }
-        catch (Exception ex)
-        {
-            // Ignore.
+            try
+            {
+                resolveBundleRevision(bundle.adapt(BundleRevision.class));
+            }
+            catch (Exception ex)
+            {
+                // Ignore.
+            }
         }
 
         if (bundle.adapt(BundleRevision.class).getWiring() == null)
@@ -1684,13 +1694,33 @@ public class Felix extends BundleImpl implements Framework
      * Implementation for Bundle.findEntries().
     **/
     Enumeration findBundleEntries(
+            BundleImpl bundle, String path, String filePattern, boolean recurse)
+    {
+        if (bundle.getState() == Bundle.UNINSTALLED)
+        {
+            throw new IllegalStateException("The bundle is uninstalled.");
+        }
+        else if (!Util.isFragment(bundle.adapt(BundleRevision.class)) && bundle.getState() == Bundle.INSTALLED)
+        {
+            try
+            {
+                resolveBundleRevision(bundle.adapt(BundleRevision.class));
+            }
+            catch (Exception ex)
+            {
+                // Ignore.
+            }
+        }
+        return findBundleEntries(
+                bundle.adapt(BundleRevision.class), path, filePattern, recurse);
+    }
+
+    /**
+     * Implementation for BundleWiring.findEntries().
+     **/
+    Enumeration findBundleEntries(
         BundleRevision revision, String path, String filePattern, boolean recurse)
     {
-        // Try to resolve the bundle per the spec.
-        List<Bundle> list = new ArrayList<Bundle>(1);
-        list.add(revision.getBundle());
-        resolveBundles(list);
-
         // Get the entry enumeration from the revision content and
         // create a wrapper enumeration to filter it.
         Enumeration enumeration =
@@ -2003,7 +2033,7 @@ public class Felix extends BundleImpl implements Framework
     {
         // CONCURRENCY NOTE:
         // We will first acquire the bundle lock for the specific bundle
-        // as long as the bundle is STARTING or ACTIVE, shich is necessary
+        // as long as the bundle is STARTING or ACTIVE, which is necessary
         // because we may change the bundle state.
 
         // Acquire bundle lock.
@@ -3258,7 +3288,7 @@ public class Felix extends BundleImpl implements Framework
      * @return A <code>ServiceRegistration</code> object or null.
     **/
     ServiceRegistration registerService(
-        BundleImpl bundle, String[] classNames, Object svcObj, Dictionary dict)
+        BundleContextImpl context, String[] classNames, Object svcObj, Dictionary dict)
     {
         if (classNames == null)
         {
@@ -3269,50 +3299,31 @@ public class Felix extends BundleImpl implements Framework
             throw new IllegalArgumentException("Service object cannot be null.");
         }
 
-        // Acquire bundle lock.
-        try
-        {
-            acquireBundleLock(bundle, Bundle.STARTING | Bundle.ACTIVE | Bundle.STOPPING);
-        }
-        catch (IllegalStateException ex)
-        {
-            throw new IllegalStateException(
-                "Can only register services while bundle is active or activating.");
-        }
-
         ServiceRegistration reg = null;
 
-        try
+        // Check to make sure that the service object is
+        // an instance of all service classes; ignore if
+        // service object is a service factory.
+        if (!(svcObj instanceof ServiceFactory))
         {
-            // Check to make sure that the service object is
-            // an instance of all service classes; ignore if
-            // service object is a service factory.
-            if (!(svcObj instanceof ServiceFactory))
+            for (int i = 0; i < classNames.length; i++)
             {
-                for (int i = 0; i < classNames.length; i++)
+                Class clazz = Util.loadClassUsingClass(svcObj.getClass(), classNames[i], m_secureAction);
+                if (clazz == null)
                 {
-                    Class clazz = Util.loadClassUsingClass(svcObj.getClass(), classNames[i], m_secureAction);
-                    if (clazz == null)
-                    {
-                        throw new IllegalArgumentException(
-                            "Cannot cast service: " + classNames[i]);
-                    }
-                    else if (!clazz.isAssignableFrom(svcObj.getClass()))
-                    {
-                        throw new IllegalArgumentException(
-                            "Service object is not an instance of \""
-                            + classNames[i] + "\".");
-                    }
+                    throw new IllegalArgumentException(
+                        "Cannot cast service: " + classNames[i]);
+                }
+                else if (!clazz.isAssignableFrom(svcObj.getClass()))
+                {
+                    throw new IllegalArgumentException(
+                        "Service object is not an instance of \""
+                        + classNames[i] + "\".");
                 }
             }
+        }
 
-            reg = m_registry.registerService(bundle, classNames, svcObj, dict);
-        }
-        finally
-        {
-            // Always release bundle lock.
-            releaseBundleLock(bundle);
-        }
+        reg = m_registry.registerService(context, classNames, svcObj, dict);
 
         // Check to see if this a listener hook; if so, then we need
         // to invoke the callback with all existing service listeners.
@@ -4695,18 +4706,21 @@ public class Felix extends BundleImpl implements Framework
 
         public void stop()
         {
-// TODO: LOCKING - This is not really correct.
-            if (m_bundle.getState() == Bundle.ACTIVE)
+            acquireBundleLock(m_bundle,
+                    Bundle.INSTALLED | Bundle.RESOLVED | Bundle.STARTING |
+                    Bundle.ACTIVE | Bundle.STOPPING);
+            try
             {
-                m_oldState = Bundle.ACTIVE;
-                try
-                {
-                    stopBundle(m_bundle, false);
-                }
-                catch (Throwable ex)
-                {
-                    fireFrameworkEvent(FrameworkEvent.ERROR, m_bundle, ex);
-                }
+                m_oldState = m_bundle.getState();
+                stopBundle(m_bundle, false);
+            }
+            catch (Throwable ex)
+            {
+                fireFrameworkEvent(FrameworkEvent.ERROR, m_bundle, ex);
+            }
+            finally
+            {
+                releaseBundleLock(m_bundle);
             }
         }
 
