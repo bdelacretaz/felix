@@ -139,7 +139,15 @@ function printForm( /* Element */ parent, /* Object */ properties, /* String */ 
     for (var prop in properties)
     {
         var attr = properties[prop];
-        var helpLink = createElement("span", null, { class:"configHelpLink", "data-config-param":prop, "data-config-pid":pid});
+        var helpData = { 
+        		class:"configHelpLink", 
+        		"data-config-param":prop, 
+        		"data-config-pid":pid,
+        		"data-config-name":attr.name,
+        		"data-config-description":attr.description,
+        		"data-config-type":attr.type
+        };
+        var helpLink = createElement("span", null, helpData);
         var trEl = tr( null, null, [
                 td( null, null, [ text( attr.name ) ] ),
                 td( null, null, [ helpLink ] )
